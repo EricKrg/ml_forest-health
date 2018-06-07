@@ -26,7 +26,8 @@ pts <- # geopck smth.
 #ndvi variations
 
 ndvi_xy <- raster("./data/raster/")
-  
+#...
+
 #****************************************
 # 2 Raster Stack------------------------
 #****************************************
@@ -37,7 +38,7 @@ layers <- stack()
 crs(layers) <- crs(pts)
 
 #check
-mapview(layers)
+mapview::mapview(layers)
 
 
 
