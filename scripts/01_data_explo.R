@@ -14,4 +14,21 @@
 #****************************************
 # 1 PACKAGES AND DATA PREPERATION-------
 #****************************************
-pacman::p_load(raster, sp, sf, mapview, rgdal)
+pacman::p_load(raster, sp, sf, mapview, rgdal, gganimate)
+
+
+
+
+
+
+
+
+
+#****************************************
+# 4 PLOTS--------------------------------
+#****************************************
+
+p <- airquality %>%
+  ggplot(aes(Solar.R,Temp, frame = Month)) + geom_jitter()
+  
+gganimate(p)
