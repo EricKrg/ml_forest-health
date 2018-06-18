@@ -1,0 +1,13 @@
+The Forest Inventory for the whole Basque Country, named “INV_FORESTAL_2016_10000_ETRS89”.
+ 
+The files “sp25_gipuzkoa_v2b_datos_clase_2018_02_19” and “SP28_GIPUZKOA_V9b_DATOS_clase_2018_02_19” (The numbers 25 and 28 in it’s names refer to the species).
+- In the field “SP1” (main specie) 25 is the laricius pine and the 28 radiata pine
+- Field “E1” (Maturity), from 0 to 4, the higher the more mature a stand is. We always take into account states 3 and 4 for these studies.
+- There is a field named “Nivel_infe”. This refers to a field survey performed in 2012 where inspectors evaluated the stand was affected or not. 0 is no affected – 1 moderate affection – 2 very affected
+- “M_ALTITUD” is the height average for the stand obtained from the last DTM
+- “sup_tesela” is the area of the stand 
+- The M_XXXX fields stand for Average NDVI value for the year in the plot. Please note that these values are obtained from the orthoimages derived from a photogrammetric flight, there is a huge “uncertainty” in them. 
+
+WCS for remote sensing data: http://geo.hazi.eus/ows?service=WCS&version=2.0.1&request=GetCapabilities (http://geo.hazi.eus/web/)
+
+Contact: Xabier Garitano xgaritano@hazi.eus
