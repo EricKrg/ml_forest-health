@@ -13,12 +13,15 @@
 #****************************************
 pacman::p_load(raster, sp, sf, mapview, rgdal, gdalUtils)
 
-#geopckg
-sp28_sf <- sf::st_read("data/SP28_GIPUZKOA_V9b_DATOS_clase_2018_02_19.gpkg")
+#geopckg------------------------------------------------------------------------
+#sp28_sf <- sf::st_read("data/SP28_GIPUZKOA_V9b_DATOS_clase_2018_02_19.gpkg")
+#forest_inv <- sf::st_read("data/INV_FORESTAL_2016_10000_ETRS89.gpkg")
+#uploaded as rds 
+sp28 <- readRDS("data/sp28.RDS")
+inv <- readRDS("data/inv_forest16.RDS")
 
-forest_inv <- sf::st_read("data/INV_FORESTAL_2016_10000_ETRS89.gpkg")
 
-#raster
+#raster-------------------------------------------------------------------------
 
 #dsn = "http://geo.hazi.eus/ows?service=WCS&version=2.0.1&request=GetCapabilities"
 #dsn = "http://geo.hazi.eus/wcs?"
@@ -145,20 +148,31 @@ for(i in cov_id_17){
   download.file(paste0(get, i), paste0("data/raster/",i,".tif"))
 }
 
-  
-  
-## NOT WORKING WCS STUFF
-l1 <- XML::newXMLNode("WCS_GDAL")
-l1.s <- XML::newXMLNode("ServiceURL", dsn, parent=l1)
-l1.l <- XML::newXMLNode("CoverageName", "SENTINEL2 Time Series NDVI", parent=l1)
-l1
-xml.out = "wcs_forest_health.xml"
-XML::saveXML(l1, file=xml.out)
-#check layer
-system(paste("gdalinfo", xml.out))
+#layerstack files---------------------------------------------------------------
 
-# Download raster as GeoTIFF 
-file.out <- ''
-system(paste('gdal_translate', ' ', xml.out, file.out))
+files_15 <- list.files("data/raster/",pattern = ".*S2._2015.*")
+files_16 <- list.files("data/raster/",pattern = ".*S2._2016.*")
+files_17 <- list.files("data/raster/",pattern = ".*S2._2017.*")
+
+inv <- readRDS("data/inv_forest16.RDS")
+inv_mask <- st_zm(inv) # drop z
+
+
+
+cutNstack <- function(filevector, bbox, path){
+  results <- list()
+  j = 1
+  for(o in filevector) {
+    r <-raster(paste0(path, o)) 
+    rc <- crop(r, inv)
+    results[[j]] <- rc 
+    j = j + 1
+  }
+  data_stack<- stack(results)
+  return(data_stack)
+} 
+# this is processed in a background job
+# --> see jobs/cutnstack_job.R
+
 
 
