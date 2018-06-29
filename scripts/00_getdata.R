@@ -1,178 +1,247 @@
 # Filename: 00_getdata.R
 
-# TO DO: get data
+# TO DO:
+# What is the difference between GEOEUSKADI and TELEDETEKZIOA
 
 #**********************************************************
 # CONTENTS-------------------------------------------------
-# 1 PACKAGES AND DATA PREPERATION
-# 2 
+# PACKAGES AND DATA PREPERATION
+# DOWNLOAD NDVI RASTERS 
+# CREATE AND CROP NDVI RASTER STACKS PER YEAR
+# Create aggregated rasterfiles for faster processing time in tests
+# Plot Rasters
 #**********************************************************
 
 #****************************************
-# 1 PACKAGES AND DATA PREPERATION-------
+# PACKAGES AND DATA PREPERATION-------
 #****************************************
-pacman::p_load(raster, sp, sf, mapview, rgdal, gdalUtils)
+pacman::p_load(raster, XML, stringr, sf, rgdal, dyplr, ggplot2)
 
-#geopckg------------------------------------------------------------------------
+#geopckg
 #sp28_sf <- sf::st_read("data/SP28_GIPUZKOA_V9b_DATOS_clase_2018_02_19.gpkg")
 #forest_inv <- sf::st_read("data/INV_FORESTAL_2016_10000_ETRS89.gpkg")
 #uploaded as rds 
 sp28 <- readRDS("data/sp28.RDS")
 inv <- readRDS("data/inv_forest16.RDS")
+names(sp28)
+names(inv)
+
+#****************************************
+## DOWNLOAD NDVI RASTERS-------
+#****************************************
+
+## Get all Sentinell NDVI file names
+# WCS Server-URL GetCapabilities query
+wcs_cap = "http://geo.hazi.eus/ows?service=WCS&version=2.0.1&request=GetCapabilities"
+# Parse XML Tree
+wcs_cap_xml = xmlTreeParse(wcs_cap, useInternalNodes = TRUE)
+# Create XML Root 
+wcs_xml_nodes = xmlRoot(wcs_cap_xml)
+# Get all CoverageIds in WCS Server
+wcs_coverageID <- XML::xpathSApply(wcs_xml_nodes, "//wcs:CoverageId", xmlValue)
+
+## Get all elements with "S2", (2015|2016|2017) and "NDVI" in CoverageID 
+# GEOEUSKADI
+cov_id_geoeu = stringr::str_subset(wcs_coverageID, "GEOEUSKADI__S2.*(2015|2016|2017).*NDVI")
+# TELEDETEKZIOA
+cov_id_teledetek = stringr::str_subset(wcs_coverageID, "TELEDETEKZIOA__S2.*(2015|2016|2017).*NDVI")
+
+# all S2 names
+all_names <- c(cov_id_geoeu,cov_id_teledetek)
+
+# creates a vector with all layer names fpr 2015-17
+for(i in list("2015","2016","2017")){
+  tmp <- all_names %>% 
+    stringr::str_extract(pattern = paste0(".*",i,".*")) %>% 
+    na.exclude()
+  tmp <- gsub("TELEDETEKZIOA__S2A_", "",x = tmp)
+  tmp <- gsub("GEOEUSKADI__S2A_", "",x = tmp)
+  tmp <- gsub("T.*", "",x = tmp)
+  tmp <- sort(tmp) # datum sortieren
+  assign(paste0("names",i),tmp) # ins env
+  saveRDS(tmp,paste0("data/names",i, ".RDS")) # save
+}
+# Server URL with CRS4326
+wcs_url <- "http://geo.hazi.eus/ows?service=WCS&version=2.0.1&request=GetCoverage&crs=4326&CoverageId="
 
 
-#raster-------------------------------------------------------------------------
-
-#dsn = "http://geo.hazi.eus/ows?service=WCS&version=2.0.1&request=GetCapabilities"
-#dsn = "http://geo.hazi.eus/wcs?"
-#dsn2 = "http://geo.hazi.eus/ows?service=WCS&version=2.0.1&request=DescribeCoverage&CoverageId=GEOEUSKADI__SENTINEL2_NDVI_DATA_FECHA"
-#dsn describe coverage, NDVI 2015 - 2018
-#dsn3 = "http://geo.hazi.eus/ows?service=WCS&version=2.0.1&request=GetCoverage&CoverageId=GEOEUSKADI__SENTINEL2_NDVI_DATA_FECHA"
-#dsn3 download by coverageID
-get <- "http://geo.hazi.eus/ows?service=WCS&version=2.0.1&request=GetCoverage&CoverageId="
-#landsat 8
-#l8 <- "http://geo.hazi.eus/ows?service=WCS&version=2.0.1&request=GetCoverage&CoverageId=GEOEUSKADI__LANDSAT8_NDVI_DATA_FECHA"
-#download.file(l8, "l8time_ndvi.tif")
-
-cov_id_15 <- c(
-  "TELEDETEKZIOA__S2A_20150818T110635806Z_NDVI",
-  "TELEDETEKZIOA__S2A_20150821T111616945Z_NDVI",
-  "TELEDETEKZIOA__S2A_20150910T111633378Z_NDVI",
-  "TELEDETEKZIOA__S2A_20150917T110653235Z_NDVI",
-  "TELEDETEKZIOA__S2A_20150930T111858682Z_NDVI",
-  "TELEDETEKZIOA__S2A_20151116T110736607Z_NDVI",
-  "TELEDETEKZIOA__S2A_20151129T112140218Z_NDVI",
-  "TELEDETEKZIOA__S2A_20151206T111905538Z_NDVI",
-  "TELEDETEKZIOA__S2A_20151219T112151354Z_NDVI",
-  "TELEDETEKZIOA__S2A_20151229T112948189Z_NDVI")
-
-for(i in cov_id_15){
-   print(i)
-  download.file(paste0(get, i), paste0("data/raster/",i,".tif"))
+for(filename in cov_id_geoeu){
+  print(filename)
+  # If file has not been downloaded allready
+  if(!file.exists(paste0("data/raster/", filename, ".tif"))){
+    download.file(paste0(wcs_url, filename), paste0("data/raster/",filename,".tif"))
+  }
 }
 
-cov_id_16 <- c(
-  "TELEDETEKZIOA__S2A_20160118T112024275Z_NDVI",
-  "TELEDETEKZIOA__S2A_20160217T111843605Z_NDVI",
-  "TELEDETEKZIOA__S2A_20160318T111523431Z_NDVI",
-  "TELEDETEKZIOA__S2A_20160417T111159116Z_NDVI",
-  "TELEDETEKZIOA__S2A_20160507T111829150Z_NDVI",
-  "TELEDETEKZIOA__S2A_20160527T111025709Z_NDVI",
-  "TELEDETEKZIOA__S2A_20160613T110559700Z_NDVI",
-  "TELEDETEKZIOA__S2A_20160616T111022709Z_NDVI",
-  "TELEDETEKZIOA__S2A_20160706T110921380Z_NDVI",
-  "TELEDETEKZIOA__S2A_20160713T110542192Z_NDVI",
-  "TELEDETEKZIOA__S2A_20160726T111748462Z_NDVI",
-  "GEOEUSKADI__S2A_20160802T110307060Z_NDVI",
-  "GEOEUSKADI__S2A_20160901T110708860Z_NDVI",
-  "GEOEUSKADI__S2A_20160911T110438472Z_NDVI",
-  "TELEDETEKZIOA__S2A_20161011T110223381Z_NDVI",
-  "GEOEUSKADI__S2A_20161021T110318551Z_NDVI",
-  "TELEDETEKZIOA__S2A_20161031T110202460Z_NDVI",
-  "GEOEUSKADI__S2A_20161103T111839668Z_NDVI",
-  "TELEDETEKZIOA__S2A_20161110T110832984Z_NDVI",
-  "GEOEUSKADI__S2A_20161203T111751494Z_NDVI"
-  )
-
-for(i in cov_id_16){
-  print(i)
-  download.file(paste0(get, i), paste0("data/raster/",i,".tif"))
+for(filename in cov_id_teledetek){
+  print(filename)
+  # If file has not been downloaded allready
+  if(!file.exists(paste0("data/raster/", filename, ".tif"))){
+    download.file(paste0(wcs_url, filename), paste0("data/raster/",filename,".tif"))
+  }
 }
 
-cov_id_17 <- c(
-  "TELEDETEKZIOA__S2A_20170129T110306462Z_NDVI",
-  "GEOEUSKADI__S2A_20170201T111820156Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170208T110245538Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170218T110125497Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170221T111821429Z_NDVI",
-  "GEOEUSKADI__S2A_20170310T105951010Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170320T110651661Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170323T111323449Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170409T110529978Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170412T111708859Z_NDVI",
-  "GEOEUSKADI__S2A_20170419T110601310Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170422T111300457Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170429T110525766Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170519T110530368Z_NDVI",
-  "GEOEUSKADI__S2A_20170522T110912028Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170601T111225371Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170611T111012353Z_NDVI",
-  "GEOEUSKADI__S2A_20170618T110415683Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170621T111222373Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170628T110445682Z_NDVI",
-  "GEOEUSKADI__S2B_20170703T110426043Z_NDVI",
-  "TELEDETEKZIOA__S2B_20170706T111832836Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170711T111223375Z_NDVI",
-  "TELEDETEKZIOA__S2B_20170713T110523761Z_NDVI",
-  "TELEDETEKZIOA__S2B_20170716T111603451Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170718T110452293Z_NDVI",
-  "TELEDETEKZIOA__S2B_20170723T110444543Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170728T110406866Z_NDVI",
-  "GEOEUSKADI__S2B_20170802T110522761Z_NDVI",
-  "TELEDETEKZIOA__S2B_20170812T110438939Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170817T110525231Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170820T111220771Z_NDVI",
-  "GEOEUSKADI__S2B_20170822T110527982Z_NDVI",
-  "TELEDETEKZIOA__S2B_20170825T111247234Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170830T110910029Z_NDVI",
-  "TELEDETEKZIOA__S2B_20170901T110442152Z_NDVI",
-  "TELEDETEKZIOA__S2B_20170904T111825839Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170916T110523550Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170919T111808254Z_NDVI",
-  "GEOEUSKADI__S2B_20170924T111106888Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170926T110656196Z_NDVI",
-  "TELEDETEKZIOA__S2A_20170929T111602827Z_NDVI",
-  "TELEDETEKZIOA__S2A_20171009T111500339Z_NDVI",
-  "GEOEUSKADI__S2B_20171011T110203161Z_NDVI",
-  "TELEDETEKZIOA__S2B_20171014T111716004Z_NDVI",
-  "TELEDETEKZIOA__S2A_20171016T110313200Z_NDVI",
-  "TELEDETEKZIOA__S2A_20171019T111235475Z_NDVI",
-  "TELEDETEKZIOA__S2A_20171026T110717194Z_NDVI",
-  "TELEDETEKZIOA__S2B_20171031T110201279Z_NDVI",
-  "TELEDETEKZIOA__S2B_20171103T111458422Z_NDVI",
-  "TELEDETEKZIOA__S2A_20171105T110231456Z_NDVI",
-  "TELEDETEKZIOA__S2B_20171113T111817339Z_NDVI",
-  "TELEDETEKZIOA__S2A_20171118T111633239Z_NDVI",
-  "TELEDETEKZIOA__S2B_20171120T110332460Z_NDVI",
-  "TELEDETEKZIOA__S2B_20171123T111629809Z_NDVI",
-  "TELEDETEKZIOA__S2A_20171128T111835828Z_NDVI",
-  "TELEDETEKZIOA__S2B_20171130T110442541Z_NDVI",
-  "GEOEUSKADI__S2A_20171205T110426462Z_NDVI",
-  "TELEDETEKZIOA__S2A_20171215T110516933Z_NDVI",
-  "TELEDETEKZIOA__S2B_20171220T110639514Z_NDVI",
-  "TELEDETEKZIOA__S2A_20171225T110447460Z_NDVI",
-  "TELEDETEKZIOA__S2B_20171230T110439456Z_NDVI")
-  
-for(i in cov_id_17){
-  print(i)
-  download.file(paste0(get, i), paste0("data/raster/",i,".tif"))
-}
+#****************************************
+## CREATE AND CROP NDVI RASTER STACKS PER YEAR-------
+#****************************************
 
-#layerstack files---------------------------------------------------------------
+#!!!
+# this is processed in a background job
+# --> see jobs/cutnstack_job.R
+#!!!
 
+
+# Get NDVI files list for every year
 files_15 <- list.files("data/raster/",pattern = ".*S2._2015.*")
 files_16 <- list.files("data/raster/",pattern = ".*S2._2016.*")
 files_17 <- list.files("data/raster/",pattern = ".*S2._2017.*")
 
+## Remove file
+# Extents do not overlap for this file
+remove_file = c("TELEDETEKZIOA__S2B_20170716T111603451Z_NDVI.tif",
+                "TELEDETEKZIOA__S2B_20170713T110523761Z_NDVI.tif")
+
+files_17 = files_17[-which(files_17 %in% remove_file)]
+
+# Inventory geopackage for BoundingBox of study area
 inv <- readRDS("data/inv_forest16.RDS")
-inv_mask <- st_zm(inv) # drop z
+names(inv)
 
-
-
-cutNstack <- function(filevector, bbox, path){
+# Crop NDVI Rasters and return list of rasters
+cutNstack <- function(filevector, extent, path){
   results <- list()
   j = 1
-  for(o in filevector) {
-    r <-raster(paste0(path, o)) 
-    rc <- crop(r, inv)
-    results[[j]] <- rc 
+  # Loop over all files in filevector
+  for(file in filevector) {
+    print(file)
+    # load rasterfile
+    temp_raster <-raster::raster(paste0(path, file))
+    raster::crs(temp_raster) <- "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
+    # crop raster file to extent
+    temp_raster_cropped <- raster::crop(temp_raster, extent)
+    results[[j]] <- temp_raster_cropped 
+    # reset and continue loop
+    temp_raster <- NULL
+    temp_raster_cropped <- NULL
+    #gc()
     j = j + 1
   }
-  data_stack<- stack(results)
-  return(data_stack)
-} 
-# this is processed in a background job
-# --> see jobs/cutnstack_job.R
+  return(results)
+}
+
+## Loop over 3 lists of filenames and run cutNstack
+# Path with raster files
+path = "data/raster/"
+# bounding box of studyarea
+study_extent = extent(inv)
+# list for output-names
+stack_list <- c("ndvi_15", "ndvi_16","ndvi_17")
+u = 1
+for(file_list in list(files_15, files_16, files_17)){
+  print(file_list)
+  # Run cutNstack
+  tmp_list <- cutNstack(file_list, study_extent, path)
+  # Create raster-stack from tmp_list
+  tmp <- raster::stack(tmp_list)
+  
+  # set the date as names of layer
+  # extract date from filename
+  date = stringr::str_extract(file_list, "20.{6}")
+  year <- substr(date, 1,4)
+  month <- substr(date, 5,6)
+  day <- substr(date, 7, nchar(date))
+  # create new name as year_month_day
+  new_names = paste("ndvi", year, month, day, sep ="_")
+  names(tmp) = new_names
+  
+  print(tmp)
+  # Write raster-stack to disk
+  ## Takes to long to write Raster. Save raster as rds file instead
+  #writeRaster(tmp,
+  #            filename=paste0(path, "stack/", stack_list[[u]], ".tif"),
+  #            options="INTERLEAVE=BAND", overwrite=TRUE)
+  saveRDS(tmp, file = paste0(path, "stack/", stack_list[[u]], ".rds"))
+  
+  # reset and continue loop
+  tmp_list <- NULL
+  tmp <- NULL
+  u = u + 1
+}
+
+
+
+#****************************************
+##  Create aggregated rasterfiles for faster processing time in tests-------
+#****************************************
+
+ndvi_17 = readRDS("data/raster/stack/ndvi_17.rds")
+a = Sys.time()
+ndvi_dis_10 = raster::aggregate(ndvi_17, 10, filename = "data/raster/stack/ndvi_17_agg10.rds")
+ndvi_dis_100 = raster::aggregate(ndvi_17, 100, filename = "data/raster/stack/ndvi_17_agg100.rds")
+Sys.time() - a
+
+ndvi_16 = readRDS("data/raster/stack/ndvi_16.rds")
+a = Sys.time()
+ndvi_dis_10 = raster::aggregate(ndvi_16, 10, filename = "data/raster/stack/ndvi_16_agg10.rds")
+ndvi_dis_100 = raster::aggregate(ndvi_16, 100, filename = "data/raster/stack/ndvi_16_agg100.rds")
+Sys.time() - a
+
+ndvi_15 = readRDS("data/raster/stack/ndvi_15.rds")
+a = Sys.time()
+ndvi_dis_10 = raster::aggregate(ndvi_15, 10, filename = "data/raster/stack/ndvi_15_agg10.rds")
+ndvi_dis_100 = raster::aggregate(ndvi_15, 100, filename = "data/raster/stack/ndvi_15_agg100.rds")
+Sys.time() - a
+
+
+#****************************************
+##  Plot Rasters-------
+#****************************************
+
+raster_files <- list.files("data/raster/",pattern = ".*S2._*")
+
+## Remove files
+# Extents of studyarea do not overlap for this files
+remove_file = c("TELEDETEKZIOA__S2B_20170716T111603451Z_NDVI.tif",
+                "TELEDETEKZIOA__S2B_20170713T110523761Z_NDVI.tif")
+
+raster_files = raster_files[-which(raster_files %in% remove_file)]
+
+## Dates of rasters
+date = stringr::str_extract(raster_files, "20.{6}")
+year <- substr(date, 1,4)
+month <- substr(date, 5,6)
+day <- substr(date, 7, nchar(date))
+# create new name as year_month_day
+dates = paste("ndvi", year, month, day, sep ="_")
+sort(dates)
+
+## Overview of raster-dates per year
+ggplot()+
+  geom_point(aes(y = as.numeric(day),
+                x= as.numeric(month),
+                colour = as.factor(year)),
+                size = 3,
+                position = position_jitter(w = 0, h = 0.2)) +
+  scale_x_continuous(breaks = 1:12) + scale_y_continuous(breaks = 1:31)
+
+
+## Create PNG for each raster
+for(file in raster_files){
+  # Load raster
+  raster = raster(paste0("data/raster/", file))
+  # Create filename
+  date = stringr::str_extract(file, "20.{6}")
+  year <- substr(date, 1,4)
+  month <- substr(date, 5,6)
+  day <- substr(date, 7, nchar(date))
+  # create new name as year_month_day
+  new_name = paste("ndvi", year, month, day, sep ="_")
+  # create new png file
+  png(filename = paste0("data/raster/png/", new_name, ".png"), width = 833, height = 640)
+  plot(raster, main = new_name)
+  dev.off()
+}
+
 
 
 
