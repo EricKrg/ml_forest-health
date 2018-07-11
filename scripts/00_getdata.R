@@ -15,7 +15,7 @@
 #****************************************
 # PACKAGES AND DATA PREPERATION-------
 #****************************************
-pacman::p_load(raster, XML, stringr, sf, rgdal, dyplr, ggplot2)
+pacman::p_load(raster, XML, stringr, sf, rgdal, dplyr, ggplot2, foreach, rasterVis)
 
 #geopckg
 #sp28_sf <- sf::st_read("data/SP28_GIPUZKOA_V9b_DATOS_clase_2018_02_19.gpkg")
@@ -49,7 +49,7 @@ cov_id_teledetek = stringr::str_subset(wcs_coverageID, "TELEDETEKZIOA__S2.*(2015
 # all S2 names
 all_names <- c(cov_id_geoeu,cov_id_teledetek)
 
-# creates a vector with all layer names fpr 2015-17
+# creates a vector with all layer names for 2015-17
 for(i in list("2015","2016","2017")){
   tmp <- all_names %>% 
     stringr::str_extract(pattern = paste0(".*",i,".*")) %>% 
@@ -61,6 +61,7 @@ for(i in list("2015","2016","2017")){
   assign(paste0("names",i),tmp) # ins env
   saveRDS(tmp,paste0("data/names",i, ".RDS")) # save
 }
+
 # Server URL with CRS4326
 wcs_url <- "http://geo.hazi.eus/ows?service=WCS&version=2.0.1&request=GetCoverage&crs=4326&CoverageId="
 
@@ -85,12 +86,6 @@ for(filename in cov_id_teledetek){
 ## CREATE AND CROP NDVI RASTER STACKS PER YEAR-------
 #****************************************
 
-#!!!
-# this is processed in a background job
-# --> see jobs/cutnstack_job.R
-#!!!
-
-
 # Get NDVI files list for every year
 files_15 <- list.files("data/raster/",pattern = ".*S2._2015.*")
 files_16 <- list.files("data/raster/",pattern = ".*S2._2016.*")
@@ -110,22 +105,20 @@ names(inv)
 # Crop NDVI Rasters and return list of rasters
 cutNstack <- function(filevector, extent, path){
   results <- list()
-  j = 1
   # Loop over all files in filevector
-  for(file in filevector) {
-    print(file)
+  no_cores = 5
+  cl <- parallel::makeCluster(no_cores, type="FORK")
+  doParallel::registerDoParallel(cl)
+  results = foreach::foreach(i = 1:length(filevector)) %dopar% {
     # load rasterfile
-    temp_raster <-raster::raster(paste0(path, file))
-    raster::crs(temp_raster) <- "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
-    # crop raster file to extent
-    temp_raster_cropped <- raster::crop(temp_raster, extent)
-    results[[j]] <- temp_raster_cropped 
-    # reset and continue loop
-    temp_raster <- NULL
-    temp_raster_cropped <- NULL
-    #gc()
-    j = j + 1
+    temp_raster = raster::raster(paste0(path, filevector[i]))
+    # set crs
+    raster::crs(temp_raster) = "+proj=utm +zone=30 +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0"
+    # crop raster file to given extent
+    raster::crop(temp_raster, extent)
   }
+  parallel::stopCluster(cl)
+  gc()
   return(results)
 }
 
@@ -136,6 +129,8 @@ path = "data/raster/"
 study_extent = extent(inv)
 # list for output-names
 stack_list <- c("ndvi_15", "ndvi_16","ndvi_17")
+stack_list <- "ndvi_17"
+file_list = files_17
 u = 1
 for(file_list in list(files_15, files_16, files_17)){
   print(file_list)
@@ -143,7 +138,6 @@ for(file_list in list(files_15, files_16, files_17)){
   tmp_list <- cutNstack(file_list, study_extent, path)
   # Create raster-stack from tmp_list
   tmp <- raster::stack(tmp_list)
-  
   # set the date as names of layer
   # extract date from filename
   date = stringr::str_extract(file_list, "20.{6}")
@@ -155,12 +149,19 @@ for(file_list in list(files_15, files_16, files_17)){
   names(tmp) = new_names
   
   print(tmp)
-  # Write raster-stack to disk
-  ## Takes to long to write Raster. Save raster as rds file instead
-  #writeRaster(tmp,
-  #            filename=paste0(path, "stack/", stack_list[[u]], ".tif"),
-  #            options="INTERLEAVE=BAND", overwrite=TRUE)
-  saveRDS(tmp, file = paste0(path, "stack/", stack_list[[u]], ".rds"))
+  ## write values to a RasterBrick row by row
+  # create empty brick
+  b <- brick(tmp, values=FALSE)  
+  b <- writeStart(b,
+                  filename= paste0(path, "stack/", stack_list[[u]], ".gri"),
+                  format="raster",
+                  overwrite=TRUE)
+  tr <- blockSize(b)
+  for (i in 1:tr$n) {
+    v <- getValuesBlock(tmp , row=tr$row[i], nrows=tr$nrows[i])
+    b <- writeValues(b, v, tr$row[i])
+  }
+  b <- writeStop(b)
   
   # reset and continue loop
   tmp_list <- NULL
@@ -235,13 +236,28 @@ for(file in raster_files){
   month <- substr(date, 5,6)
   day <- substr(date, 7, nchar(date))
   # create new name as year_month_day
-  new_name = paste("ndvi", year, month, day, sep ="_")
-  # create new png file
-  png(filename = paste0("data/raster/png/", new_name, ".png"), width = 833, height = 640)
-  plot(raster, main = new_name)
-  dev.off()
+  new_name = paste("NDVI", year, month, day, sep ="_")
+  # create new plot
+  #png(filename = paste0("data/raster/png/", new_name, ".png"), width = 416, height = 320)
+  #plot(raster, main = new_name)
+  #  dev.off()
+  p = gplot(raster) +
+    geom_tile(aes(fill = value)) +
+    scale_fill_gradientn(colours = rev(terrain.colors(10)), 
+                         breaks = seq(0, 20000, 5000),
+                         name = "NDVI") +
+    ggtitle(new_name) + 
+    coord_equal()
+  ggsave(filename = paste0(new_name, ".png"), 
+         plot = p, 
+         path = "data/raster/png",
+         width = 5, height = 3)
+  
+
 }
 
-
-
+library("xlsx")
+# Write the first data set in a new workbook
+write.xlsx(table(month, year), file = "figures/szenen_monat_jahr.xlsx",
+           sheetName = "szenen", append = FALSE)
 
